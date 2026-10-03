@@ -12,7 +12,7 @@ export default function Auth() {
     e.preventDefault(); setBusy(true);
     const { data, error } = mode === 'login'
       ? await supabase.auth.signInWithPassword({ email: f.email, password: f.password })
-      : await supabase.auth.signUp({ email: f.email, password: f.password, options: { data: { username: f.username.trim() } } });
+      : await supabase.auth.signUp({ email: f.email, password: f.password, options: { data: { username: f.username.trim() }, emailRedirectTo: window.location.origin } });
     setBusy(false);
     if (error) toast(error.message, true);
     else if (mode === 'signup' && !data.session) toast('Account created. Confirm your email, then sign in.');

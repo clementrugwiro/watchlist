@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Star, Film, Upload } from 'lucide-react';
+import { Plus, Search, Star, Film, Upload, RefreshCw, Check } from 'lucide-react';
 import Shell from '../../components/Shell';
 import { Sheet, Field, Empty } from '../../components/ui';
 import ImportSheet from '../../components/Import';
+import SyncSheet from '../../components/Sync';
 import { supabase } from '../../lib/supabase';
 import { avg, act, toast, uploadImage, IMPORT_EMAIL } from '../../lib/util';
 const TYPES = ['movie', 'series', 'cartoon', 'anime'];
@@ -13,9 +14,15 @@ export default function Page() { return <Shell>{u => <Discover user={u} />}</She
 function Discover({ user }) {
   const [items, setItems] = useState(null); const [q, setQ] = useState(''); const [type, setType] = useState(''); const [genre, setGenre] = useState('');
   const [open, setOpen] = useState(false); const [f, setF] = useState(blank); const [imp, setImp] = useState(false); const [file, setFile] = useState(null);
+  const [sync, setSync] = useState(false); const [fresh, setFresh] = useState(false); const [seen, setSeen] = useState(new Set()); const [doneSet, setDoneSet] = useState(new Set());
   const load = async () => {
-    const { data } = await supabase.from('media').select('*, ratings(rating)').order('created_at', { ascending: false });
-    setItems(data || []);
+    const [a, b, c] = await Promise.all([
+      supabase.from('media').select('*, ratings(rating)').order('created_at', { ascending: false }),
+      supabase.from('user_media').select('media_id'),
+      supabase.from('watch_progress').select('media_id,status').eq('user_id', user.id)]);
+    setItems(a.data || []);
+    setDoneSet(new Set((b.data || []).map(x => x.media_id)));
+    setSeen(new Set((c.data || []).filter(x => x.status !== 'not_started').map(x => x.media_id)));
   };
   useEffect(() => { load(); }, []);
   const set = k => e => setF({ ...f, [k]: e.target.value });
@@ -34,13 +41,16 @@ function Discover({ user }) {
   }
   const genres = [...new Set((items || []).flatMap(i => i.genre || []))];
   const shown = (items || []).filter(i => i.title.toLowerCase().includes(q.toLowerCase())
-    && (!type || i.media_type === type) && (!genre || (i.genre || []).includes(genre)));
+    && (!type || i.media_type === type) && (!genre || (i.genre || []).includes(genre))
+    && (!fresh || !(doneSet.has(i.id) || seen.has(i.id))));
   return (<>
-    <div className="row sp"><h1>Discover</h1>{user.email?.toLowerCase() === IMPORT_EMAIL && <button className="btn sec sm" onClick={() => setImp(true)}><Upload size={15} /> Import CSV / Excel</button>}</div>
+    <div className="row sp"><h1>Discover</h1>{user.email?.toLowerCase() === IMPORT_EMAIL && <span className="row"><button className="btn sec sm" onClick={() => setImp(true)}><Upload size={15} /> Import</button>
+      <button className="btn sec sm" onClick={() => setSync(true)}><RefreshCw size={15} /> Sync episodes</button></span>}</div>
     <div style={{ position: 'relative' }}><Search size={18} style={{ position: 'absolute', left: 12, top: 13, color: 'var(--muted)' }} />
       <input style={{ paddingLeft: 38 }} placeholder="Search movies, anime, series..." value={q} onChange={e => setQ(e.target.value)} /></div>
     <div className="chips" style={{ marginTop: 10 }}>{['', ...TYPES].map(t =>
-      <button key={t} className={`chip ${type === t ? 'on' : ''}`} onClick={() => setType(t)}>{t ? t[0].toUpperCase() + t.slice(1) : 'All'}</button>)}</div>
+      <button key={t} className={`chip ${type === t ? 'on' : ''}`} onClick={() => setType(t)}>{t ? t[0].toUpperCase() + t.slice(1) : 'All'}</button>)}
+      <button className={`chip ${fresh ? 'on' : ''}`} onClick={() => setFresh(!fresh)}>Not watched yet</button></div>
     {genres.length > 0 && <div className="chips">{genres.map(g =>
       <button key={g} className={`chip ${genre === g ? 'on' : ''}`} onClick={() => setGenre(genre === g ? '' : g)}>{g}</button>)}</div>}
     {items === null ? <div className="sk" /> : shown.length === 0
@@ -49,9 +59,11 @@ function Discover({ user }) {
         <Link key={i.id} href={`/m/${i.id}`} className="pc">
           <div className="im">{i.poster_url ? <img src={i.poster_url} alt="" /> : i.title[0]}</div>
           <span className="badge"><Star size={11} fill="currentColor" />{avg(i.ratings)}</span>
+          {doneSet.has(i.id) && <span className="badge" style={{ right: 'auto', left: 8, background: '#10b981' }}><Check size={11} />Done</span>}
           <b>{i.title}</b><span className="muted">{i.media_type}{i.release_date && ` · ${i.release_date.slice(0, 4)}`}</span>
         </Link>))}</div>}
     <button className="fab" aria-label="Add media" onClick={() => setOpen(true)}><Plus size={26} /></button>
+    {sync && <SyncSheet onClose={() => setSync(false)} onDone={load} />}
     {imp && <ImportSheet user={user} existing={items || []} onClose={() => setImp(false)} onDone={() => { setImp(false); load(); }} />}
     {open && <Sheet title="Add media" onClose={() => setOpen(false)}>
       <form onSubmit={add}>
