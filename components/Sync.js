@@ -3,15 +3,15 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Sheet } from './ui';
 import { supabase } from '../lib/supabase';
-import { syncMedia } from '../lib/jikan';
+import { syncMedia } from '../lib/anilist';
 const recent = m => m.synced_at && Date.now() - new Date(m.synced_at) < 6 * 3600e3;            // checked in the last 6 hours
-const settled = m => m.mal_id && m.mal_status === 'Finished Airing' && m.synced_at;            // finished shows no longer change
+const settled = m => m.mal_status === 'Finished Airing' && m.synced_at;            // finished shows no longer change
 export default function SyncSheet({ onClose, onDone }) {
   const [run, setRun] = useState(false); const [pg, setPg] = useState({ i: 0, n: 0 }); const [res, setRes] = useState(null);
   async function go() {
     setRun(true);
     const { data } = await supabase.from('media')
-      .select('id,title,release_date,poster_url,description,genre,mal_id,mal_status,synced_at,episodes(id,season_number,episode_number)')
+      .select('id,title,release_date,poster_url,description,genre,mal_id,anilist_id,mal_status,synced_at,episodes(id,season_number,episode_number)')
       .eq('media_type', 'anime').order('title');
     const todo = data.filter(m => !settled(m) && !recent(m));
     const out = { updated: [], ok: data.length - todo.length, review: [], denied: 0, error: [] };
@@ -30,8 +30,8 @@ export default function SyncSheet({ onClose, onDone }) {
     setRes(out); setRun(false); onDone();
   }
   return (
-    <Sheet title="Sync anime from MyAnimeList" onClose={onClose}>
-      <p className="muted">The public Jikan API allows about one request per second, so the first run over 100 titles takes a few minutes. After that, finished shows are skipped and only shows still airing (or not matched yet) are checked. Each title is saved as it is done, so if you stop, the next run continues where this one stopped. Nothing is overwritten or removed.</p>
+    <Sheet title="Sync anime from AniList" onClose={onClose}>
+      <p className="muted">AniList allows about 90 requests a minute, so the first run over 100 titles takes roughly 2 to 4 minutes. After that, finished shows are skipped and only shows still airing (or not matched yet) are checked. Each title is saved as it is done, so if you stop, the next run continues where this one stopped. Nothing is overwritten or removed.</p>
       {!res && <button className="btn" style={{ width: '100%' }} disabled={run} onClick={go}>{run ? `Syncing ${pg.i} / ${pg.n}...` : 'Start sync'}</button>}
       {run && <><div className="bar" style={{ marginTop: 10 }}><i style={{ width: `${pg.n ? pg.i / pg.n * 100 : 0}%`, background: 'var(--accent)' }} /></div>
         <p className="muted">About {Math.max(1, Math.ceil((pg.n - pg.i) * 1.4 / 60))} min left</p></>}

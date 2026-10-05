@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, Trash2, Pencil, RefreshCw } from 'lucide-react';
 import Shell from '../../../components/Shell';
 import { Stars, Pill, Sheet, Field } from '../../../components/ui';
-import { syncMedia } from '../../../lib/jikan';
+import { syncMedia } from '../../../lib/anilist';
 import { supabase } from '../../../lib/supabase';
 import { avg, act, sortEps, lab, removeImage, uploadImage, toast } from '../../../lib/util';
 export default function Page() { return <Shell>{u => <Media user={u} />}</Shell>; }
@@ -54,7 +54,7 @@ function Media({ user }) {
     setBusy(true);
     try {
       const r = await syncMedia(m, m.episodes);
-      toast(r.status === 'review' ? 'No confident match on MyAnimeList. Add the MAL ID in Edit.' : r.status === 'denied' ? 'You cannot edit this title'
+      toast(r.status === 'review' ? 'No confident match on AniList. Add the MAL ID in Edit.' : r.status === 'denied' ? 'You cannot edit this title'
         : r.status === 'error' ? r.msg : r.added ? `Added ${r.added} new episodes` : 'Already up to date', r.status === 'error');
     } catch (e) { toast(e.message, true); }
     setBusy(false); load();
@@ -86,7 +86,7 @@ function Media({ user }) {
         <span className="muted">add</span><input type="number" min="1" value={ep.count} onChange={e => setEp({ ...ep, count: e.target.value })} />
         <button className="btn sm" onClick={addEps}>Add episodes</button></div>}</div>
     {canEdit && <div className="row"><button className="btn sec" onClick={startEdit}><Pencil size={16} /> Edit</button>
-      {m.media_type === 'anime' && <button className="btn sec" disabled={busy} onClick={doSync}><RefreshCw size={16} /> {busy ? 'Working...' : 'Sync from MyAnimeList'}</button>}</div>}
+      {m.media_type === 'anime' && <button className="btn sec" disabled={busy} onClick={doSync}><RefreshCw size={16} /> {busy ? 'Working...' : 'Sync episodes'}</button>}</div>}
     {isMine && <button className="btn bad" onClick={del}><Trash2 size={16} /> Delete media</button>}
     {edit && <Sheet title="Edit media" onClose={() => setEdit(null)}>
       <form onSubmit={saveEdit}>
