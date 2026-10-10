@@ -10,3 +10,13 @@ self.addEventListener('fetch', e => {
             .catch(() => caches.match(r))
   );
 });
+
+// Tapping a chat notification opens (or focuses) the app on that group's chat.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/';
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) if ('focus' in c) { c.navigate?.(url); return c.focus(); }
+    return clients.openWindow(url);
+  }));
+});

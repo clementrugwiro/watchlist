@@ -8,20 +8,20 @@ import { Stars, Pill, Sheet, Field } from '../../../components/ui';
 import { syncMedia } from '../../../lib/anilist';
 import { syncTmdb } from '../../../lib/tmdb';
 import { supabase } from '../../../lib/supabase';
-import { avg, act, sortEps, lab, removeImage, uploadImage, toast } from '../../../lib/util';
+import { avg, act, sortEps, lab, removeImage, uploadImage, toast, SECTIONS, LIST_STATUS } from '../../../lib/util';
 export default function Page() { return <Shell>{u => <Media user={u} />}</Shell>; }
 function Media({ user }) {
   const { id } = useParams(); const router = useRouter();
   const [m, setM] = useState(null); const [mine, setMine] = useState([]); const [inG, setInG] = useState([]);
   const [gid, setGid] = useState(''); const [ep, setEp] = useState({ season: 1, count: 1 });
-  const [done, setDone] = useState(null); const [edit, setEdit] = useState(null); const [file, setFile] = useState(null); const [busy, setBusy] = useState(false);
+  const [wl, setWl] = useState(''); const [edit, setEdit] = useState(null); const [file, setFile] = useState(null); const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
     const [a, b, c, d] = await Promise.all([
       supabase.from('media').select('*, ratings(user_id,rating), episodes(*)').eq('id', id).single(),
       supabase.from('group_members').select('groups(id,name,media_type)').eq('user_id', user.id),
       supabase.from('group_media').select('group_id,status').eq('media_id', id),
-      supabase.from('user_media').select('completed_at').eq('media_id', id).maybeSingle()]);
-    setM(a.data); setMine((b.data || []).map(x => x.groups).filter(Boolean)); setInG(c.data || []); setDone(d.data?.completed_at || null);
+      supabase.from('watchlist').select('status').eq('media_id', id).eq('user_id', user.id).maybeSingle()]);
+    setM(a.data); setMine((b.data || []).map(x => x.groups).filter(Boolean)); setInG(c.data || []); setWl(d.data?.status || '');
   }, [id]);
   useEffect(() => { load(); }, [load]);
   if (!m) return <div className="sk" />;
@@ -34,8 +34,9 @@ function Media({ user }) {
     const start = Math.max(0, ...eps.filter(e => e.season_number === +ep.season).map(e => e.episode_number));
     return run(supabase.from('episodes').insert(Array.from({ length: +ep.count }, (_, i) => ({ media_id: id, season_number: +ep.season, episode_number: start + i + 1 }))), 'Episodes added');
   };
-  const toggleDone = () => run(done ? supabase.from('user_media').delete().eq('media_id', id).eq('user_id', user.id)
-    : supabase.from('user_media').insert({ user_id: user.id, media_id: id }), done ? 'Removed from completed' : 'Marked as completed');
+  const setList = v => run(v === '' ? supabase.from('watchlist').delete().eq('media_id', id).eq('user_id', user.id)
+    : supabase.from('watchlist').upsert({ user_id: user.id, media_id: id, status: v, updated_at: new Date().toISOString() }, { onConflict: 'user_id,media_id' }),
+    v === '' ? 'Removed from your list' : `Saved to your list as ${v}`);
   const ed = k => e => setEdit({ ...edit, [k]: e.target.value });
   const startEdit = () => { setFile(null); setEdit({ title: m.title, media_type: m.media_type, genre: (m.genre || []).join(', '), release_date: m.release_date || '', poster_url: m.poster_url || '', description: m.description || '', mal_id: m.mal_id || '', tmdb_id: m.tmdb_id || '' }); };
   async function saveEdit(e) {
@@ -71,8 +72,11 @@ function Media({ user }) {
           <div className="row" style={{ gap: 6 }}><Stars value={a === '–' ? 0 : +a} /><b>{a}</b><span style={{ opacity: .8 }}>({m.ratings.length})</span></div></div>
       </div></div>
     {m.description && <p>{m.description}</p>}
-    <div className="card row sp"><span><b>{done ? 'You completed this' : 'Not completed yet'}</b>{done && <span className="muted"> · {done.slice(0, 10)}</span>}</span>
-      <button className={`btn sm ${done ? 'sec' : ''}`} onClick={toggleDone}>{done ? 'Undo' : 'Mark completed'}</button></div>
+    <div className="card"><div className="row sp"><b>My list</b>{wl && <Pill s={wl} />}</div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <select value={wl} onChange={e => setList(e.target.value)}><option value="">Not in my list</option>
+          {LIST_STATUS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+      <p className="muted" style={{ marginBottom: 0 }}>Shows on your profile under {SECTIONS.find(s => s[0] === m.media_type)?.[1] || 'your lists'}.</p></div>
     <div className="card"><b>Your rating</b><div><Stars value={myRating} onChange={rate} /></div></div>
     <div className="card"><b>Groups</b>
       {inG.map(x => <div key={x.group_id} className="row sp" style={{ margin: '8px 0' }}><span>{mine.find(g => g.id === x.group_id)?.name}</span><Pill s={x.status} /></div>)}

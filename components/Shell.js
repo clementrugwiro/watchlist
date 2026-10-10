@@ -5,6 +5,15 @@ import { usePathname } from 'next/navigation';
 import { Users, Compass, User, Clapperboard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Auth from './Auth';
+import NotifyProvider, { useNotify } from './Notify';
+function Nav({ path }) {
+  const { total } = useNotify(); // unread chat messages across all groups
+  const tab = (href, Icon, label, on, n = 0) => <Link href={href} className={on(path) ? 'on' : ''}><span className="ic"><Icon size={22} />{n > 0 && <i className="dot">{n > 9 ? '9+' : n}</i>}</span><span>{label}</span></Link>;
+  return (<nav><div className="brand"><Clapperboard size={22} /> Watchlist</div>
+    {tab('/', Users, 'Groups', p => p === '/' || p.startsWith('/g/'), total)}
+    {tab('/discover', Compass, 'Discover', p => p.startsWith('/discover') || p.startsWith('/m/'))}
+    {tab('/profile', User, 'Profile', p => p.startsWith('/profile') || p.startsWith('/u/'))}</nav>);
+}
 export default function Shell({ children }) {
   const [s, setS] = useState(undefined); const [t, setT] = useState(null); const path = usePathname();
   useEffect(() => {
@@ -23,12 +32,8 @@ export default function Shell({ children }) {
   const toastEl = t && <div className={`toast ${t.bad ? 'bad' : ''}`}>{t.m}</div>;
   if (s === undefined) return <div className="boot"><Clapperboard size={40} /></div>;
   if (!s) return <><Auth />{toastEl}</>;
-  const tab = (href, Icon, label, on) => <Link href={href} className={on(path) ? 'on' : ''}><Icon size={22} /><span>{label}</span></Link>;
-  return (<>
-    <nav><div className="brand"><Clapperboard size={22} /> Watchlist</div>
-      {tab('/', Users, 'Groups', p => p === '/' || p.startsWith('/g/'))}
-      {tab('/discover', Compass, 'Discover', p => p.startsWith('/discover') || p.startsWith('/m/'))}
-      {tab('/profile', User, 'Profile', p => p.startsWith('/profile'))}</nav>
+  return (<NotifyProvider user={s.user}>
+    <Nav path={path} />
     <main className="wrap">{children(s.user)}
-      <p className="muted" style={{ textAlign: 'center', marginTop: 28 }}>Anime data from AniList. Movie and series data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</p></main>{toastEl}</>);
+      <p className="muted" style={{ textAlign: 'center', marginTop: 28 }}>Anime data from AniList. Movie and series data from TMDB.</p></main>{toastEl}</NotifyProvider>);
 }

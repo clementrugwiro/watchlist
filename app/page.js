@@ -1,13 +1,15 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users, MessageCircle } from 'lucide-react';
 import Shell from '../components/Shell';
 import { Avatar, Pill, Sheet, Field, Empty } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import { act } from '../lib/util';
+import { useNotify } from '../components/Notify';
 export default function Page() { return <Shell>{u => <Groups user={u} />}</Shell>; }
 function Groups({ user }) {
+  const { unread } = useNotify();
   const [rows, setRows] = useState(null); const [open, setOpen] = useState(false); const [name, setName] = useState(''); const [type, setType] = useState('anime');
   async function load() {
     const { data } = await supabase.from('group_members')
@@ -25,7 +27,7 @@ function Groups({ user }) {
       ? <Empty icon={<Users size={44} />} text="No groups yet. Create one and invite up to 3 friends." />
       : rows.map(({ color, groups: g }) => (
         <Link key={g.id} href={`/g/${g.id}`} className="card gcard" style={{ '--c': color }}>
-          <div className="row sp"><b style={{ fontSize: 17 }}>{g.name} <Pill s={g.media_type} /></b><span className="muted">{g.group_members.length} / 4 members</span></div>
+          <div className="row sp"><b style={{ fontSize: 17 }}>{g.name} <Pill s={g.media_type} />{unread[g.id] > 0 && <span className="dot inl" title="Unread messages"><MessageCircle size={11} />&nbsp;{unread[g.id]}</span>}</b><span className="muted">{g.group_members.length} / 4 members</span></div>
           <div className="row sp" style={{ marginTop: 10 }}>
             <span className="stack">{g.group_members.map((m, i) => <Avatar key={i} name={m.profiles?.username} src={m.profiles?.avatar_url} color={m.color} />)}</span>
             <span className="muted">{g.group_media[0]?.count || 0} titles</span></div>

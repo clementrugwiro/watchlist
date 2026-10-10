@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, Plus, Users, SkipForward, Check, Film, ListChecks } from 'lucide-react';
 import Shell from '../../../components/Shell';
 import { Avatar, Pill, Sheet, Empty } from '../../../components/ui';
+import Chat from '../../../components/Chat';
 import { supabase } from '../../../lib/supabase';
 import { act, toast, sortEps, lab } from '../../../lib/util';
 const COLORS = ['#6366F1', '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6'];
@@ -89,7 +90,7 @@ function Group({ user }) {
           const p = pOf(x.user_id, m.id); const idx = eps.findIndex(z => z.id === p?.episode_id) + 1;
           const pct = p?.status === 'completed' ? 100 : eps.length ? idx / eps.length * 100 : 0;
           return (<div key={x.user_id} className="row" style={{ flexWrap: 'nowrap', margin: '10px 0 0' }}>
-            <Avatar name={x.profiles?.username} src={x.profiles?.avatar_url} color={x.color} size={26} />
+            <Link href={x.user_id === user.id ? '/profile' : `/u/${x.user_id}`}><Avatar name={x.profiles?.username} src={x.profiles?.avatar_url} color={x.color} size={26} /></Link>
             <div style={{ flex: 1 }}><div className="row sp muted"><span>{x.user_id === user.id ? 'You' : x.profiles?.username}{idx > 0 && ` · ${lab(eps[idx - 1])}`}</span><Pill s={p?.status || 'not_started'} /></div>
               <div className="bar"><i style={{ width: pct + '%', background: x.color }} /></div></div></div>);
         })}
@@ -114,7 +115,7 @@ function Group({ user }) {
       })}</Sheet>}
     {mo && <Sheet title={`Members ${mem.length} / 4`} onClose={() => setMo(false)}>
       {mem.map(x => (<div key={x.user_id} className="row sp" style={{ margin: '10px 0' }}>
-        <span className="row"><Avatar name={x.profiles?.username} src={x.profiles?.avatar_url} color={x.color} />@{x.profiles?.username}{x.user_id === g.created_by && <Pill s="watching" />}</span>
+        <Link href={x.user_id === user.id ? '/profile' : `/u/${x.user_id}`} className="row"><Avatar name={x.profiles?.username} src={x.profiles?.avatar_url} color={x.color} />@{x.profiles?.username}{x.user_id === g.created_by && <Pill s="watching" />}</Link>
         {owner && x.user_id !== user.id && <button className="btn bad sm" onClick={() => run(supabase.from('group_members').delete().eq('group_id', id).eq('user_id', x.user_id), 'Member removed')}>Remove</button>}</div>))}
       {owner && <form onSubmit={addMember} className="row"><input placeholder="Friend's username" value={uname} onChange={e => setUname(e.target.value)} required />
         <button className="btn" disabled={mem.length >= 4}>{mem.length >= 4 ? 'Group full' : '+ Add member'}</button></form>}
@@ -123,5 +124,6 @@ function Group({ user }) {
         style={{ background: c, width: 34, height: 34, borderRadius: '50%', border: 0, cursor: 'pointer', outline: me?.color === c ? '3px solid var(--fg)' : 'none', outlineOffset: 2 }} />)}</div>
       <div style={{ marginTop: 18 }}>{owner ? <button className="btn bad" onClick={delGroup}>Delete group</button> : <button className="btn bad" onClick={leave}>Leave group</button>}</div>
     </Sheet>}
+    <Chat groupId={id} user={user} members={mem} />
   </>);
 }

@@ -7,22 +7,21 @@ import { Sheet, Field, Empty } from '../../components/ui';
 import ImportSheet from '../../components/Import';
 import SyncSheet from '../../components/Sync';
 import { supabase } from '../../lib/supabase';
-import { avg, act, toast, uploadImage, IMPORT_EMAIL } from '../../lib/util';
+import { avg, avgNum, act, toast, uploadImage, IMPORT_EMAIL } from '../../lib/util';
 const TYPES = ['movie', 'series', 'cartoon', 'anime'];
+const WL_COLOR = { planned: '#64748b', watching: '#3b82f6', completed: '#10b981', dropped: '#ef4444' };
 const blank = { title: '', media_type: 'anime', genre: '', release_date: '', poster_url: '', description: '', episodes: '' };
 export default function Page() { return <Shell>{u => <Discover user={u} />}</Shell>; }
 function Discover({ user }) {
-  const [items, setItems] = useState(null); const [q, setQ] = useState(''); const [type, setType] = useState(''); const [genre, setGenre] = useState('');
+  const [items, setItems] = useState(null); const [q, setQ] = useState(''); const [type, setType] = useState(''); const [genre, setGenre] = useState(''); const [minStar, setMinStar] = useState(''); // '' = any, 1-5 = average of at least that, 'none' = unrated
   const [open, setOpen] = useState(false); const [f, setF] = useState(blank); const [imp, setImp] = useState(false); const [file, setFile] = useState(null);
-  const [sync, setSync] = useState(false); const [fresh, setFresh] = useState(false); const [seen, setSeen] = useState(new Set()); const [doneSet, setDoneSet] = useState(new Set());
+  const [sync, setSync] = useState(false); const [fresh, setFresh] = useState(false); const [wl, setWl] = useState({}); // my personal list: media id -> status
   const load = async () => {
-    const [a, b, c] = await Promise.all([
+    const [a, b] = await Promise.all([
       supabase.from('media').select('*, ratings(rating)').order('created_at', { ascending: false }),
-      supabase.from('user_media').select('media_id'),
-      supabase.from('watch_progress').select('media_id,status').eq('user_id', user.id)]);
+      supabase.from('watchlist').select('media_id,status').eq('user_id', user.id)]);
     setItems(a.data || []);
-    setDoneSet(new Set((b.data || []).map(x => x.media_id)));
-    setSeen(new Set((c.data || []).filter(x => x.status !== 'not_started').map(x => x.media_id)));
+    setWl(Object.fromEntries((b.data || []).map(x => [x.media_id, x.status])));
   };
   useEffect(() => { load(); }, []);
   const set = k => e => setF({ ...f, [k]: e.target.value });
@@ -42,7 +41,8 @@ function Discover({ user }) {
   const genres = [...new Set((items || []).flatMap(i => i.genre || []))];
   const shown = (items || []).filter(i => i.title.toLowerCase().includes(q.toLowerCase())
     && (!type || i.media_type === type) && (!genre || (i.genre || []).includes(genre))
-    && (!fresh || !(doneSet.has(i.id) || seen.has(i.id))));
+    && (minStar === '' || (minStar === 'none' ? avgNum(i.ratings) === null : avgNum(i.ratings) !== null && avgNum(i.ratings) >= minStar))
+    && (!fresh || !['watching', 'completed', 'dropped'].includes(wl[i.id])));
   return (<>
     <div className="row sp"><h1>Discover</h1>{user.email?.toLowerCase() === IMPORT_EMAIL && <span className="row"><button className="btn sec sm" onClick={() => setImp(true)}><Upload size={15} /> Import</button>
       <button className="btn sec sm" onClick={() => setSync(true)}><RefreshCw size={15} /> Sync episodes</button></span>}</div>
@@ -51,15 +51,20 @@ function Discover({ user }) {
     <div className="chips" style={{ marginTop: 10 }}>{['', ...TYPES].map(t =>
       <button key={t} className={`chip ${type === t ? 'on' : ''}`} onClick={() => setType(t)}>{t ? t[0].toUpperCase() + t.slice(1) : 'All'}</button>)}
       <button className={`chip ${fresh ? 'on' : ''}`} onClick={() => setFresh(!fresh)}>Not watched yet</button></div>
+    <div className="chips">
+      <button className={`chip ${minStar === '' ? 'on' : ''}`} onClick={() => setMinStar('')}>Any rating</button>
+      {[5, 4, 3, 2, 1].map(n => <button key={n} className={`chip ${minStar === n ? 'on' : ''}`} onClick={() => setMinStar(minStar === n ? '' : n)}>
+        <Star size={12} fill="currentColor" style={{ verticalAlign: -1 }} /> {n === 5 ? '5' : `${n}+`}</button>)}
+      <button className={`chip ${minStar === 'none' ? 'on' : ''}`} onClick={() => setMinStar(minStar === 'none' ? '' : 'none')}>Unrated</button></div>
     {genres.length > 0 && <div className="chips">{genres.map(g =>
       <button key={g} className={`chip ${genre === g ? 'on' : ''}`} onClick={() => setGenre(genre === g ? '' : g)}>{g}</button>)}</div>}
     {items === null ? <div className="sk" /> : shown.length === 0
-      ? <Empty icon={<Film size={44} />} text="Nothing here yet. Tap + to add the first title." />
+      ? <Empty icon={<Film size={44} />} text={items.length ? 'No titles match these filters.' : 'Nothing here yet. Tap + to add the first title.'} />
       : <div className="grid">{shown.map(i => (
         <Link key={i.id} href={`/m/${i.id}`} className="pc">
           <div className="im">{i.poster_url ? <img src={i.poster_url} alt="" /> : i.title[0]}</div>
           <span className="badge"><Star size={11} fill="currentColor" />{avg(i.ratings)}</span>
-          {doneSet.has(i.id) && <span className="badge" style={{ right: 'auto', left: 8, background: '#10b981' }}><Check size={11} />Done</span>}
+          {wl[i.id] && <span className="badge" style={{ right: 'auto', left: 8, background: WL_COLOR[wl[i.id]], textTransform: 'capitalize' }}>{wl[i.id] === 'completed' && <Check size={11} />}{wl[i.id]}</span>}
           <b>{i.title}</b><span className="muted">{i.media_type}{i.release_date && ` · ${i.release_date.slice(0, 4)}`}</span>
         </Link>))}</div>}
     <button className="fab" aria-label="Add media" onClick={() => setOpen(true)}><Plus size={26} /></button>
