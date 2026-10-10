@@ -6,6 +6,7 @@ import { ChevronLeft, Trash2, Pencil, RefreshCw } from 'lucide-react';
 import Shell from '../../../components/Shell';
 import { Stars, Pill, Sheet, Field } from '../../../components/ui';
 import { syncMedia } from '../../../lib/anilist';
+import { syncTmdb } from '../../../lib/tmdb';
 import { supabase } from '../../../lib/supabase';
 import { avg, act, sortEps, lab, removeImage, uploadImage, toast } from '../../../lib/util';
 export default function Page() { return <Shell>{u => <Media user={u} />}</Shell>; }
@@ -36,14 +37,14 @@ function Media({ user }) {
   const toggleDone = () => run(done ? supabase.from('user_media').delete().eq('media_id', id).eq('user_id', user.id)
     : supabase.from('user_media').insert({ user_id: user.id, media_id: id }), done ? 'Removed from completed' : 'Marked as completed');
   const ed = k => e => setEdit({ ...edit, [k]: e.target.value });
-  const startEdit = () => { setFile(null); setEdit({ title: m.title, media_type: m.media_type, genre: (m.genre || []).join(', '), release_date: m.release_date || '', poster_url: m.poster_url || '', description: m.description || '', mal_id: m.mal_id || '' }); };
+  const startEdit = () => { setFile(null); setEdit({ title: m.title, media_type: m.media_type, genre: (m.genre || []).join(', '), release_date: m.release_date || '', poster_url: m.poster_url || '', description: m.description || '', mal_id: m.mal_id || '', tmdb_id: m.tmdb_id || '' }); };
   async function saveEdit(e) {
     e.preventDefault(); setBusy(true);
     let poster = edit.poster_url.trim() || null;
     if (file) { poster = await uploadImage('posters', user.id, file, 600); if (!poster) return setBusy(false); }
     const { data, error } = await supabase.from('media').update({ title: edit.title.trim(), media_type: edit.media_type,
       genre: edit.genre.split(',').map(s => s.trim()).filter(Boolean), release_date: edit.release_date || null, poster_url: poster,
-      description: edit.description.trim() || null, mal_id: edit.mal_id ? +edit.mal_id : null }).eq('id', id).select('id');
+      description: edit.description.trim() || null, mal_id: edit.mal_id ? +edit.mal_id : null, tmdb_id: edit.tmdb_id ? +edit.tmdb_id : null }).eq('id', id).select('id');
     setBusy(false);
     if (error) return toast(error.message, true);
     if (!data?.length) return toast('You cannot edit this title', true);
@@ -53,8 +54,8 @@ function Media({ user }) {
   async function doSync() {
     setBusy(true);
     try {
-      const r = await syncMedia(m, m.episodes);
-      toast(r.status === 'review' ? 'No confident match on AniList. Add the MAL ID in Edit.' : r.status === 'denied' ? 'You cannot edit this title'
+      const r = await (m.media_type === 'anime' ? syncMedia : syncTmdb)(m, m.episodes);
+      toast(r.status === 'review' ? `No confident match on ${m.media_type === 'anime' ? 'AniList. Add the MAL ID' : 'TMDB. Add the TMDB ID'} in Edit.` : r.status === 'denied' ? 'You cannot edit this title'
         : r.status === 'error' ? r.msg : r.added ? `Added ${r.added} new episodes` : 'Already up to date', r.status === 'error');
     } catch (e) { toast(e.message, true); }
     setBusy(false); load();
@@ -86,7 +87,7 @@ function Media({ user }) {
         <span className="muted">add</span><input type="number" min="1" value={ep.count} onChange={e => setEp({ ...ep, count: e.target.value })} />
         <button className="btn sm" onClick={addEps}>Add episodes</button></div>}</div>
     {canEdit && <div className="row"><button className="btn sec" onClick={startEdit}><Pencil size={16} /> Edit</button>
-      {m.media_type === 'anime' && <button className="btn sec" disabled={busy} onClick={doSync}><RefreshCw size={16} /> {busy ? 'Working...' : 'Sync episodes'}</button>}</div>}
+      {['anime', 'movie', 'series'].includes(m.media_type) && <button className="btn sec" disabled={busy} onClick={doSync}><RefreshCw size={16} /> {busy ? 'Working...' : m.media_type === 'movie' ? 'Refresh details' : 'Sync episodes'}</button>}</div>}
     {isMine && <button className="btn bad" onClick={del}><Trash2 size={16} /> Delete media</button>}
     {edit && <Sheet title="Edit media" onClose={() => setEdit(null)}>
       <form onSubmit={saveEdit}>
@@ -97,7 +98,8 @@ function Media({ user }) {
         <Field label="Release date" type="date" value={edit.release_date} onChange={ed('release_date')} />
         <Field label="Poster image URL" value={edit.poster_url} onChange={ed('poster_url')} />
         <label className="fld"><span>Or upload a new poster</span><input type="file" accept="image/*" onChange={e => setFile(e.target.files[0] || null)} /></label>
-        <Field label="MyAnimeList ID (optional, used for syncing)" type="number" min="1" value={edit.mal_id} onChange={ed('mal_id')} />
+        {edit.media_type === 'anime' && <Field label="MyAnimeList ID (optional, used for syncing)" type="number" min="1" value={edit.mal_id} onChange={ed('mal_id')} />}
+        {(edit.media_type === 'movie' || edit.media_type === 'series') && <Field label="TMDB ID (optional, used for syncing)" type="number" min="1" value={edit.tmdb_id} onChange={ed('tmdb_id')} />}
         <label className="fld"><span>Description</span><textarea rows={4} value={edit.description} onChange={ed('description')} /></label>
         <button className="btn" style={{ width: '100%' }} disabled={busy}>{busy ? 'Saving...' : 'Save changes'}</button></form></Sheet>}
   </>);

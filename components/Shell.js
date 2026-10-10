@@ -29,5 +29,6 @@ export default function Shell({ children }) {
       {tab('/', Users, 'Groups', p => p === '/' || p.startsWith('/g/'))}
       {tab('/discover', Compass, 'Discover', p => p.startsWith('/discover') || p.startsWith('/m/'))}
       {tab('/profile', User, 'Profile', p => p.startsWith('/profile'))}</nav>
-    <main className="wrap">{children(s.user)}</main>{toastEl}</>);
+    <main className="wrap">{children(s.user)}
+      <p className="muted" style={{ textAlign: 'center', marginTop: 28 }}>Anime data from AniList. Movie and series data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</p></main>{toastEl}</>);
 }
