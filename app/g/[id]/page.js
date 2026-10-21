@@ -2,33 +2,41 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Plus, Users, SkipForward, Check, Film, ListChecks } from 'lucide-react';
+import { ChevronLeft, Plus, Users, SkipForward, Check, Film, ListChecks, Search } from 'lucide-react';
 import Shell from '../../../components/Shell';
 import { Avatar, Pill, Sheet, Empty } from '../../../components/ui';
 import Chat from '../../../components/Chat';
 import { supabase } from '../../../lib/supabase';
 import { act, toast, sortEps, lab } from '../../../lib/util';
+import { pushEvent } from '../../../lib/push';
 const COLORS = ['#6366F1', '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6'];
 const PS = [['not_started', 'Planned'], ['watching', 'Watching'], ['completed', 'Completed'], ['dropped', 'Dropped']];
 export default function Page() { return <Shell>{u => <Group user={u} />}</Shell>; }
 function Group({ user }) {
   const { id } = useParams(); const router = useRouter();
   const [g, setG] = useState(null); const [mem, setMem] = useState([]); const [gm, setGm] = useState([]);
-  const [prog, setProg] = useState([]); const [cat, setCat] = useState([]);
-  const [pick, setPick] = useState(''); const [uname, setUname] = useState('');
+  const [prog, setProg] = useState([]); const [res, setRes] = useState([]);
+  const [pq, setPq] = useState(''); const [uname, setUname] = useState('');
   const [mo, setMo] = useState(false); const [lst, setLst] = useState(null); const [ex, setEx] = useState(null); const [nEp, setNEp] = useState('');
   const load = useCallback(async () => {
-    const [a, b, c, d, e] = await Promise.all([
-      supabase.from('groups').select('name,created_by,media_type').eq('id', id).single(),
+    const [a, b, c, d] = await Promise.all([
+      supabase.from('groups').select('name,created_by').eq('id', id).single(),
       supabase.from('group_members').select('user_id,color,profiles(username,avatar_url)').eq('group_id', id),
       supabase.from('group_media').select('media(id,title,poster_url,episodes(id,season_number,episode_number))').eq('group_id', id),
-      supabase.from('watch_progress').select('*').eq('group_id', id),
-      supabase.from('media').select('id,title,media_type').order('title')]);
-    setG(a.data); setMem(b.data || []); setGm(c.data || []); setProg(d.data || []); setCat(e.data || []);
+      supabase.from('watch_progress').select('*').eq('group_id', id)]);
+    setG(a.data); setMem(b.data || []); setGm(c.data || []); setProg(d.data || []);
     const me = (b.data || []).find(x => x.user_id === user.id);
     if (me) document.documentElement.style.setProperty('--accent', me.color);
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { // search the whole catalog as you type
+    const s = pq.trim().replace(/[%_]/g, ''); if (s.length < 2) { setRes([]); return; }
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from('media').select('id,title,media_type,release_date').ilike('title', `%${s}%`).order('title').limit(8);
+      setRes(data || []);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [pq]);
   if (!g) return <div className="sk" />;
   const owner = g.created_by === user.id; const me = mem.find(m => m.user_id === user.id);
   const run = async (p, ok) => { await act(p, ok); load(); };
@@ -38,7 +46,10 @@ function Group({ user }) {
   const RANK = { watching: 0, not_started: 1, dropped: 2, completed: 3 };
   const byMine = (a, b) => RANK[st(a.media.id)] - RANK[st(b.media.id)]
     || new Date(pOf(user.id, b.media.id)?.watched_at || 0) - new Date(pOf(user.id, a.media.id)?.watched_at || 0);
-  const avail = cat.filter(c => c.media_type === g.media_type && !gm.some(x => x.media.id === c.id));
+  const addMedia = async c => {
+    if (await act(supabase.from('group_media').insert({ group_id: id, media_id: c.id, added_by: user.id }), `${c.title} added`)) { pushEvent({ type: 'media_added', groupId: id, mediaId: c.id }); setPq(''); }
+    load();
+  };
   const setP = (mid, patch) => {
     const cur = pOf(user.id, mid) || { status: 'not_started', episode_id: null };
     return run(supabase.from('watch_progress').upsert({ group_id: id, user_id: user.id, media_id: mid, episode_id: cur.episode_id, status: cur.status, ...patch, watched_at: new Date().toISOString() }, { onConflict: 'group_id,user_id,media_id' }));
@@ -56,7 +67,7 @@ function Group({ user }) {
     const n = Math.min(+nEp || 0, 500); if (n < 1) return toast('Enter how many episodes to add', true);
     const last = eps[eps.length - 1]; const season = last ? last.season_number : 1; const start = last ? last.episode_number : 0;
     await run(supabase.from('episodes').insert(Array.from({ length: n }, (_, i) => ({ media_id: m.id, season_number: season, episode_number: start + i + 1 }))), 'Episodes added');
-    setNEp('');
+    pushEvent({ type: 'episodes', mediaId: m.id, count: n }); setNEp('');
   };
   async function addMember(e) {
     e.preventDefault();
@@ -71,15 +82,18 @@ function Group({ user }) {
     <div className="hero" style={{ background: `linear-gradient(135deg, ${me?.color || '#6366F1'}, #111827)` }}>
       <div className="row sp"><h1 style={{ margin: 0 }}>{g.name}</h1>
         <button className="btn sm" style={{ background: '#fff3' }} onClick={() => setMo(true)}><Users size={15} /> {mem.length} / 4</button></div>
-      <div className="row" style={{ margin: '10px 0' }}><span className="stack">{mem.map(m => <Avatar key={m.user_id} name={m.profiles?.username} src={m.profiles?.avatar_url} color={m.color} size={34} />)}</span><Pill s={g.media_type} /></div>
+      <div className="row" style={{ margin: '10px 0' }}><span className="stack">{mem.map(m => <Avatar key={m.user_id} name={m.profiles?.username} src={m.profiles?.avatar_url} color={m.color} size={34} />)}</span></div>
       <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>{PS.map(([s, l]) =>
         <button key={s} className="stat" onClick={() => setLst(s)}><b>{mine(s).length}</b><span style={{ fontSize: 11 }}>{l}</span></button>)}</div>
-      <div style={{ fontSize: 12, opacity: .8, marginTop: 6 }}>My {g.media_type} titles. Tap a number to see the list.</div></div>
-    <div className="row"><select value={pick} onChange={e => setPick(e.target.value)}>
-      <option value="">{avail.length ? `Add a ${g.media_type} title...` : `No more ${g.media_type} titles. Create one in Discover.`}</option>
-      {avail.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
-      <button className="btn" disabled={!pick} onClick={async () => { await run(supabase.from('group_media').insert({ group_id: id, media_id: pick, added_by: user.id }), 'Added'); setPick(''); }}><Plus size={16} /> Add</button></div>
-    {gm.length === 0 && <Empty icon={<Film size={44} />} text="No titles yet. Add one from the list above." />}
+      <div style={{ fontSize: 12, opacity: .8, marginTop: 6 }}>My titles in this group. Tap a number to see the list.</div></div>
+    <div style={{ position: 'relative' }}><Search size={18} style={{ position: 'absolute', left: 12, top: 13, color: 'var(--muted)' }} />
+      <input style={{ paddingLeft: 38 }} placeholder="Search a movie, series or anime to add..." value={pq} onChange={e => setPq(e.target.value)} /></div>
+    {pq.trim().length >= 2 && <div className="card" style={{ padding: 6 }}>
+      {res.map(c => (<div key={c.id} className="row sp" style={{ padding: '8px 6px' }}>
+        <span><b>{c.title}</b> <span className="muted">{c.media_type}{c.release_date && ` · ${c.release_date.slice(0, 4)}`}</span></span>
+        {gm.some(x => x.media.id === c.id) ? <span className="pill completed">In group</span> : <button className="btn sm" onClick={() => addMedia(c)}><Plus size={14} /> Add</button>}</div>))}
+      {res.length === 0 && <p className="muted" style={{ margin: 8 }}>No match. Create it first in <Link href="/discover">Discover</Link>.</p>}</div>}
+    {gm.length === 0 && <Empty icon={<Film size={44} />} text="No titles yet. Search above to add one." />}
     {[...gm].sort(byMine).map(({ media: m }) => {
       const eps = sortEps(m.episodes); const my = pOf(user.id, m.id) || { status: 'not_started', episode_id: null };
       const myIdx = eps.findIndex(z => z.id === my.episode_id) + 1;
@@ -107,7 +121,7 @@ function Group({ user }) {
             <input type="checkbox" checked={i < myIdx} onChange={() => tick(m, eps, i, myIdx)} />{lab(e)}</label>)}</div></>}
       </div>);
     })}
-    {lst && <Sheet title={`My ${PS.find(p => p[0] === lst)[1].toLowerCase()} ${g.media_type} titles (${mine(lst).length})`} onClose={() => setLst(null)}>
+    {lst && <Sheet title={`My ${PS.find(p => p[0] === lst)[1].toLowerCase()} titles (${mine(lst).length})`} onClose={() => setLst(null)}>
       {mine(lst).length === 0 && <Empty icon={<Film size={36} />} text="Nothing here yet." />}
       {mine(lst).map(({ media: m }) => {
         const eps = sortEps(m.episodes); const i = eps.findIndex(z => z.id === pOf(user.id, m.id)?.episode_id);

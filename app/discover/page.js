@@ -8,7 +8,7 @@ import ImportSheet from '../../components/Import';
 import SyncSheet from '../../components/Sync';
 import { supabase } from '../../lib/supabase';
 import { avg, avgNum, act, toast, uploadImage, IMPORT_EMAIL } from '../../lib/util';
-const TYPES = ['movie', 'series', 'cartoon', 'anime'];
+const TYPES = ['movie', 'series', 'anime'];
 const WL_COLOR = { planned: '#64748b', watching: '#3b82f6', completed: '#10b981', dropped: '#ef4444' };
 const blank = { title: '', media_type: 'anime', genre: '', release_date: '', poster_url: '', description: '', episodes: '' };
 export default function Page() { return <Shell>{u => <Discover user={u} />}</Shell>; }

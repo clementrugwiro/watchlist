@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, X, CornerUpLeft } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/util';
+import { pushEvent } from '../lib/push';
 import { useNotify } from './Notify';
 import { Sheet } from './ui';
 
@@ -80,7 +81,7 @@ export default function Chat({ groupId, user, members }) {
     const { data, error } = await supabase.from('messages')
       .insert({ group_id: groupId, user_id: user.id, reply_to: reply?.id || null, ...fields }).select(COLS).single();
     if (error) { toast(error.message, true); return false; }
-    setReply(null); add(data); return true;
+    setReply(null); add(data); pushEvent({ type: 'message', messageId: data.id }); return true;
   }
   async function send(e) {
     e.preventDefault(); const body = text.trim(); if (!body) return; setText('');

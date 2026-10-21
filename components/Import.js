@@ -4,7 +4,7 @@ import Papa from 'papaparse';
 import { Sheet } from './ui';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/util';
-const TYPES = ['movie', 'series', 'cartoon', 'anime'];
+const TYPES = ['movie', 'series', 'anime'];
 const key = h => String(h).trim().toLowerCase().replace(/\s+/g, '_');
 const iso = v => {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -13,7 +13,7 @@ const iso = v => {
 };
 function clean(r) {
   const g = k => String(r[k] ?? '').trim();
-  return { title: g('title') || g('name'), media_type: (g('type') || g('media_type')).toLowerCase(),
+  return { title: g('title') || g('name'), media_type: (g('type') || g('media_type')).toLowerCase().replace('cartoon', 'movie'),
     genre: g('genre').split(/[,;|]/).map(s => s.trim()).filter(Boolean), release_date: iso(r.release_date ?? r.year),
     poster_url: g('poster_url') || null, description: g('description') || null, eps: Math.min(parseInt(g('episodes')) || 0, 1500) };
 }
@@ -51,7 +51,7 @@ export default function ImportSheet({ user, existing, onClose, onDone }) {
   }
   return (
     <Sheet title="Import from CSV or Excel" onClose={onClose}>
-      <p className="muted">Columns: title, type (movie / series / cartoon / anime), genre, release_date, episodes, poster_url, description. Only title and type are required. Accepts .csv and .xlsx.</p>
+      <p className="muted">Columns: title, type (movie / series / anime), genre, release_date, episodes, poster_url, description. Only title and type are required. Accepts .csv and .xlsx.</p>
       <button className="btn sec sm" onClick={template}>Download CSV template</button>
       <label className="fld"><span>Choose a file</span><input type="file" accept=".csv,.xlsx" onChange={pick} /></label>
       {rows && <><p><b>{ok.length}</b> ready · {dup.length} already exist · {bad.length} skipped (title and valid type needed)</p>

@@ -1,19 +1,20 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { LogOut, Camera, Bell, Search } from 'lucide-react';
+import { LogOut, Camera, Bell, Search, Globe } from 'lucide-react';
 import Shell from '../../components/Shell';
 import { Avatar, Field } from '../../components/ui';
 import WatchLists from '../../components/WatchLists';
 import { askPermission, canNotify } from '../../components/Notify';
 import { supabase } from '../../lib/supabase';
 import { act, toast, uploadImage, removeImage } from '../../lib/util';
+import { pushSupported, pushEnabled, enablePush, disablePush } from '../../lib/push';
 export default function Page() { return <Shell>{u => <Profile user={u} />}</Shell>; }
 function Profile({ user }) {
   const [p, setP] = useState(null); const [pw, setPw] = useState(''); const [perm, setPerm] = useState('default');
-  const [q, setQ] = useState(''); const [found, setFound] = useState(null);
+  const [q, setQ] = useState(''); const [found, setFound] = useState(null); const [on, setOn] = useState(false);
   const load = () => supabase.from('profiles').select('username,avatar_url,created_at').eq('id', user.id).maybeSingle().then(({ data }) => setP(data));
-  useEffect(() => { load(); setPerm(canNotify() ? Notification.permission : 'unsupported'); }, []);
+  useEffect(() => { load(); setPerm(canNotify() && pushSupported() ? Notification.permission : 'unsupported'); pushEnabled().then(setOn); }, []);
   useEffect(() => { // find a friend by username
     const s = q.trim().replace(/[%_]/g, ''); if (s.length < 2) { setFound(null); return; }
     const t = setTimeout(async () => {
@@ -28,7 +29,12 @@ function Profile({ user }) {
     if (await act(supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id), 'Photo updated')) { removeImage('avatars', p?.avatar_url); load(); }
   }
   async function change(e) { e.preventDefault(); if (await act(supabase.auth.updateUser({ password: pw }), 'Password changed')) setPw(''); }
-  async function enableNotes() { const r = await askPermission(); setPerm(r); if (r === 'granted') toast('Notifications on'); }
+  async function togglePush() {
+    try {
+      if (on) { await disablePush(); setOn(false); toast('Notifications off'); } else { await enablePush(user.id); setOn(true); toast('Notifications on'); }
+      setPerm(Notification.permission);
+    } catch (e) { toast(e.message || 'Could not change notifications', true); }
+  }
   return (<>
     <div style={{ textAlign: 'center', padding: '20px 0' }}>
       <label style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}>
@@ -44,12 +50,12 @@ function Profile({ user }) {
         <input style={{ paddingLeft: 38 }} placeholder="Search by username" value={q} onChange={e => setQ(e.target.value)} /></div>
       {found?.length === 0 && <p className="muted">Nobody found with that name.</p>}
       {found?.map(f => <Link key={f.id} href={`/u/${f.id}`} className="row" style={{ margin: '10px 0', flexWrap: 'nowrap' }}><Avatar name={f.username} src={f.avatar_url} size={34} /><b>@{f.username}</b></Link>)}</div>
-    <div className="card"><div className="row sp"><b><Bell size={15} style={{ verticalAlign: -2 }} /> Chat notifications</b>
-      {perm === 'default' && <button className="btn sm" onClick={enableNotes}>Turn on</button>}
-      {perm === 'granted' && <span className="pill completed">On</span>}</div>
-      <p className="muted" style={{ marginBottom: 0 }}>{perm === 'denied' ? 'Blocked in your browser settings. Allow notifications for this site to turn them on.'
-        : perm === 'unsupported' ? 'This browser does not support notifications. On iPhone, add the app to your Home Screen first.'
-        : 'Get an alert when someone writes in one of your groups. Unread counts always show on the Groups tab.'}</p></div>
+    <Link href="/sites" className="card row sp"><b><Globe size={15} style={{ verticalAlign: -2 }} /> Where to watch</b><span className="muted">Manage sites ›</span></Link>
+    <div className="card"><div className="row sp"><b><Bell size={15} style={{ verticalAlign: -2 }} /> Phone notifications</b>
+      {perm !== 'unsupported' && perm !== 'denied' && <button className="btn sm" onClick={togglePush}>{on ? 'Turn off' : 'Turn on'}</button>}</div>
+      <p className="muted" style={{ marginBottom: 0 }}>{perm === 'denied' ? 'Blocked. Allow notifications for this app in your phone settings, then come back.'
+        : perm === 'unsupported' ? 'Not available here. On iPhone, add the app to your Home Screen first (iOS 16.4 or newer), then open it from there.'
+        : 'Get an alert for chat messages, titles added to your groups, and new episodes of anime you are watching or completed. A number shows on the app icon.'}</p></div>
     <form className="card" onSubmit={change}><b>Change password</b>
       <Field label="New password" type="password" minLength={6} value={pw} onChange={e => setPw(e.target.value)} required />
       <button className="btn sec">Update password</button></form>

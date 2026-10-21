@@ -2,37 +2,46 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Trash2, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Trash2, Pencil, RefreshCw, ExternalLink } from 'lucide-react';
 import Shell from '../../../components/Shell';
 import { Stars, Pill, Sheet, Field } from '../../../components/ui';
 import { syncMedia } from '../../../lib/anilist';
 import { syncTmdb } from '../../../lib/tmdb';
 import { supabase } from '../../../lib/supabase';
+import { pushEvent } from '../../../lib/push';
+import { LANGS, SUGGESTED, siteHost, searchLink } from '../../../lib/sites';
 import { avg, act, sortEps, lab, removeImage, uploadImage, toast, SECTIONS, LIST_STATUS } from '../../../lib/util';
 export default function Page() { return <Shell>{u => <Media user={u} />}</Shell>; }
 function Media({ user }) {
   const { id } = useParams(); const router = useRouter();
   const [m, setM] = useState(null); const [mine, setMine] = useState([]); const [inG, setInG] = useState([]);
   const [gid, setGid] = useState(''); const [ep, setEp] = useState({ season: 1, count: 1 });
+  const [sites, setSites] = useState([]); const [lang, setLang] = useState('');
   const [wl, setWl] = useState(''); const [edit, setEdit] = useState(null); const [file, setFile] = useState(null); const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
-    const [a, b, c, d] = await Promise.all([
+    const [a, b, c, d, w] = await Promise.all([
       supabase.from('media').select('*, ratings(user_id,rating), episodes(*)').eq('id', id).single(),
-      supabase.from('group_members').select('groups(id,name,media_type)').eq('user_id', user.id),
+      supabase.from('group_members').select('groups(id,name)').eq('user_id', user.id),
       supabase.from('group_media').select('group_id,status').eq('media_id', id),
-      supabase.from('watchlist').select('status').eq('media_id', id).eq('user_id', user.id).maybeSingle()]);
-    setM(a.data); setMine((b.data || []).map(x => x.groups).filter(Boolean)); setInG(c.data || []); setWl(d.data?.status || '');
+      supabase.from('watchlist').select('status').eq('media_id', id).eq('user_id', user.id).maybeSingle(),
+      supabase.from('watch_sites').select('*').order('name')]);
+    setM(a.data); setMine((b.data || []).map(x => x.groups).filter(Boolean)); setInG(c.data || []); setWl(d.data?.status || ''); setSites(w.data || []);
   }, [id]);
   useEffect(() => { load(); }, [load]);
   if (!m) return <div className="sk" />;
   const a = avg(m.ratings); const myRating = m.ratings.find(r => r.user_id === user.id)?.rating || 0;
-  const eps = sortEps(m.episodes); const free = mine.filter(g => g.media_type === m.media_type && !inG.some(x => x.group_id === g.id));
+  const eps = sortEps(m.episodes); const free = mine.filter(g => !inG.some(x => x.group_id === g.id));
   const isMine = m.created_by === user.id; const canEdit = isMine || inG.length > 0;
   const run = async (p, ok) => { await act(p, ok); load(); };
+  const okLang = s => !lang || s.language === lang || s.language === 'both';
+  const mySites = sites.filter(s => (s.types || []).includes(m.media_type) && okLang(s));
+  const saved = new Set(sites.map(s => siteHost(s.url)));
+  const sug = SUGGESTED.filter(s => s.types.includes(m.media_type) && okLang(s) && !saved.has(siteHost(s.url)));
+  const saveSite = s => act(supabase.from('watch_sites').insert({ ...s, created_by: user.id }), `${s.name} saved to your sites`).then(load);
   const rate = n => run(supabase.from('ratings').upsert({ user_id: user.id, media_id: id, rating: n, updated_at: new Date().toISOString() }, { onConflict: 'user_id,media_id' }), 'Rating saved');
   const addEps = () => {
     const start = Math.max(0, ...eps.filter(e => e.season_number === +ep.season).map(e => e.episode_number));
-    return run(supabase.from('episodes').insert(Array.from({ length: +ep.count }, (_, i) => ({ media_id: id, season_number: +ep.season, episode_number: start + i + 1 }))), 'Episodes added');
+    return run(supabase.from('episodes').insert(Array.from({ length: +ep.count }, (_, i) => ({ media_id: id, season_number: +ep.season, episode_number: start + i + 1 }))), 'Episodes added').then(() => pushEvent({ type: 'episodes', mediaId: id, count: +ep.count }));
   };
   const setList = v => run(v === '' ? supabase.from('watchlist').delete().eq('media_id', id).eq('user_id', user.id)
     : supabase.from('watchlist').upsert({ user_id: user.id, media_id: id, status: v, updated_at: new Date().toISOString() }, { onConflict: 'user_id,media_id' }),
@@ -82,8 +91,15 @@ function Media({ user }) {
       {inG.map(x => <div key={x.group_id} className="row sp" style={{ margin: '8px 0' }}><span>{mine.find(g => g.id === x.group_id)?.name}</span><Pill s={x.status} /></div>)}
       {free.length > 0 && <div className="row" style={{ marginTop: 8 }}>
         <select value={gid} onChange={e => setGid(e.target.value)}><option value="">Add to a group...</option>{free.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-        <button className="btn sm" disabled={!gid} onClick={() => run(supabase.from('group_media').insert({ group_id: gid, media_id: id, added_by: user.id }), 'Added to group')}>Add</button></div>}
-      {free.length === 0 && inG.length === 0 && <p className="muted">No {m.media_type} group yet. Create one on the Groups tab.</p>}</div>
+        <button className="btn sm" disabled={!gid} onClick={async () => { await run(supabase.from('group_media').insert({ group_id: gid, media_id: id, added_by: user.id }), 'Added to group'); pushEvent({ type: 'media_added', groupId: gid, mediaId: id }); }}>Add</button></div>}
+      {free.length === 0 && inG.length === 0 && <p className="muted">No group yet. Create one on the Groups tab.</p>}</div>
+    <div className="card"><div className="row sp"><b>Where to watch</b>
+      <span className="row"><select style={{ flex: 'none' }} value={lang} onChange={e => setLang(e.target.value)}><option value="">Any language</option><option value="fr">French</option><option value="en">English</option></select>
+        <Link href="/sites" className="btn sec sm">Manage</Link></span></div>
+      {mySites.map(s => <SiteRow key={s.id} s={s} title={m.title} />)}
+      {mySites.length === 0 && <p className="muted">None of your saved sites match. Suggestions:</p>}
+      {sug.length > 0 && mySites.length > 0 && <p className="muted" style={{ marginBottom: 0 }}>Suggestions:</p>}
+      {sug.map(s => <SiteRow key={s.url} s={s} title={m.title} onSave={() => saveSite(s)} />)}</div>
     <div className="card"><b>Episodes</b>
       {eps.length === 0 && <p className="muted">No episodes. Fine for movies.</p>}
       <div className="row" style={{ margin: '8px 0' }}>{eps.map(e => <span key={e.id} className="pill">{lab(e)}</span>)}</div>
@@ -96,8 +112,8 @@ function Media({ user }) {
     {edit && <Sheet title="Edit media" onClose={() => setEdit(null)}>
       <form onSubmit={saveEdit}>
         <Field label="Title" value={edit.title} onChange={ed('title')} required />
-        <label className="fld"><span>Type{inG.length > 0 && ' (locked while in a group)'}</span>
-          <select disabled={inG.length > 0} value={edit.media_type} onChange={ed('media_type')}>{['movie', 'series', 'cartoon', 'anime'].map(t => <option key={t}>{t}</option>)}</select></label>
+        <label className="fld"><span>Type</span>
+          <select value={edit.media_type} onChange={ed('media_type')}>{['movie', 'series', 'anime'].map(t => <option key={t}>{t}</option>)}</select></label>
         <Field label="Genres (comma separated)" value={edit.genre} onChange={ed('genre')} />
         <Field label="Release date" type="date" value={edit.release_date} onChange={ed('release_date')} />
         <Field label="Poster image URL" value={edit.poster_url} onChange={ed('poster_url')} />
@@ -107,4 +123,11 @@ function Media({ user }) {
         <label className="fld"><span>Description</span><textarea rows={4} value={edit.description} onChange={ed('description')} /></label>
         <button className="btn" style={{ width: '100%' }} disabled={busy}>{busy ? 'Saving...' : 'Save changes'}</button></form></Sheet>}
   </>);
+}
+function SiteRow({ s, title, onSave }) {
+  return (<div className="row sp" style={{ margin: '10px 0' }}>
+    <span><b>{s.name}</b> <span className="muted">{LANGS.find(l => l[0] === s.language)?.[1]}</span></span>
+    <span className="row"><a className="btn sec sm" href={s.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Open</a>
+      <a className="btn sec sm" href={searchLink(title, s.url)} target="_blank" rel="noopener noreferrer">Find title</a>
+      {onSave && <button className="btn sm" onClick={onSave}>Save</button>}</span></div>);
 }

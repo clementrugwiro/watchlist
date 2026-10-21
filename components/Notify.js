@@ -2,12 +2,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/util';
+import { pushEnabled } from '../lib/push';
 
 const Ctx = createContext({ unread: {}, total: 0, setActive() {}, clear() {}, refresh() {} });
 export const useNotify = () => useContext(Ctx);
 export const canNotify = () => typeof Notification !== 'undefined';
 export const askPermission = async () => (canNotify() ? Notification.requestPermission() : 'unsupported');
 
+const clearShown = () => { // opening the app clears waiting notifications and the number on the icon
+  try { navigator.clearAppBadge?.(); navigator.serviceWorker?.ready.then(r => r.getNotifications().then(l => l.forEach(n => n.close()))); } catch {}
+};
 async function system(title, body, url) { // phone-style notification while the app is in the background
   if (!canNotify() || Notification.permission !== 'granted') return;
   try {
@@ -29,9 +33,9 @@ export default function NotifyProvider({ user, children }) {
   const clear = useCallback(gid => setUnread(u => (u[gid] ? { ...u, [gid]: 0 } : u)), []);
 
   useEffect(() => {
-    supabase.rpc('purge_chat').then(() => refresh());
+    clearShown(); supabase.rpc('purge_chat').then(() => refresh());
     const iv = setInterval(refresh, 60000);
-    const vis = () => { if (!document.hidden) refresh(); };
+    const vis = () => { if (!document.hidden) { refresh(); clearShown(); } };
     document.addEventListener('visibilitychange', vis);
     const ch = supabase.channel('chat-notify')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async ({ new: m }) => {
@@ -42,7 +46,7 @@ export default function NotifyProvider({ user, children }) {
           supabase.from('groups').select('name').eq('id', m.group_id).maybeSingle(),
           supabase.from('profiles').select('username').eq('id', m.user_id).maybeSingle()]);
         const title = g.data?.name || 'Group chat'; const body = `${p.data?.username || 'Someone'}: ${m.body}`;
-        if (document.hidden) system(title, body.slice(0, 140), `/g/${m.group_id}?chat=1`);
+        if (document.hidden) { if (!(await pushEnabled())) system(title, body.slice(0, 140), `/g/${m.group_id}?chat=1`); } // real push covers it otherwise
         else toast(`💬 ${title} · ${body.slice(0, 80)}`);
       }).subscribe();
     return () => { clearInterval(iv); document.removeEventListener('visibilitychange', vis); supabase.removeChannel(ch); };
