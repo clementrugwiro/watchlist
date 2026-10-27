@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Plus, Users, SkipForward, Check, Film, ListChecks, Search } from 'lucide-react';
+import { ChevronLeft, Plus, Users, SkipForward, Check, Film, ListChecks, Search, Sparkles } from 'lucide-react';
 import Shell from '../../../components/Shell';
 import { Avatar, Pill, Sheet, Empty } from '../../../components/ui';
 import Chat from '../../../components/Chat';
@@ -20,7 +20,7 @@ function Group({ user }) {
   const [mo, setMo] = useState(false); const [lst, setLst] = useState(null); const [ex, setEx] = useState(null); const [nEp, setNEp] = useState('');
   const load = useCallback(async () => {
     const [a, b, c, d] = await Promise.all([
-      supabase.from('groups').select('name,created_by').eq('id', id).single(),
+      supabase.from('groups').select('name,created_by,is_personal').eq('id', id).single(),
       supabase.from('group_members').select('user_id,color,profiles(username,avatar_url)').eq('group_id', id),
       supabase.from('group_media').select('media(id,title,poster_url,episodes(id,season_number,episode_number))').eq('group_id', id),
       supabase.from('watch_progress').select('*').eq('group_id', id)]);
@@ -47,7 +47,7 @@ function Group({ user }) {
   const byMine = (a, b) => RANK[st(a.media.id)] - RANK[st(b.media.id)]
     || new Date(pOf(user.id, b.media.id)?.watched_at || 0) - new Date(pOf(user.id, a.media.id)?.watched_at || 0);
   const addMedia = async c => {
-    if (await act(supabase.from('group_media').insert({ group_id: id, media_id: c.id, added_by: user.id }), `${c.title} added`)) { pushEvent({ type: 'media_added', groupId: id, mediaId: c.id }); setPq(''); }
+    if (await act(supabase.from('group_media').insert({ group_id: id, media_id: c.id, added_by: user.id }), `${c.title} added`)) { if (!g.is_personal) pushEvent({ type: 'media_added', groupId: id, mediaId: c.id }); setPq(''); }
     load();
   };
   const setP = (mid, patch) => {
@@ -79,10 +79,12 @@ function Group({ user }) {
   const delGroup = async () => { if (confirm('Delete this group?') && await act(supabase.from('groups').delete().eq('id', id), 'Group deleted')) router.push('/'); };
   return (<>
     <Link href="/" className="muted"><ChevronLeft size={14} style={{ verticalAlign: -2 }} />Groups</Link>
-    <div className="hero" style={{ background: `linear-gradient(135deg, ${me?.color || '#6366F1'}, #111827)` }}>
-      <div className="row sp"><h1 style={{ margin: 0 }}>{g.name}</h1>
-        <button className="btn sm" style={{ background: '#fff3' }} onClick={() => setMo(true)}><Users size={15} /> {mem.length} / 4</button></div>
-      <div className="row" style={{ margin: '10px 0' }}><span className="stack">{mem.map(m => <Avatar key={m.user_id} name={m.profiles?.username} src={m.profiles?.avatar_url} color={m.color} size={34} />)}</span></div>
+    <div className="hero" style={{ background: `linear-gradient(135deg, ${me?.color || '#6366F1'}, ${g.is_personal ? '#ec4899' : '#111827'})` }}>
+      <div className="row sp"><h1 style={{ margin: 0 }}>{g.is_personal && <Sparkles size={22} style={{ verticalAlign: -2, marginRight: 8 }} />}{g.name}</h1>
+        {g.is_personal ? <span className="pill" style={{ background: '#fff3', color: '#fff' }}>Personal</span>
+          : <button className="btn sm" style={{ background: '#fff3' }} onClick={() => setMo(true)}><Users size={15} /> {mem.length} / 4</button>}</div>
+      {g.is_personal ? <div style={{ margin: '10px 0', color: '#fffb' }}>Just for what you are watching. Nobody else can join.</div>
+        : <div className="row" style={{ margin: '10px 0' }}><span className="stack">{mem.map(m => <Avatar key={m.user_id} name={m.profiles?.username} src={m.profiles?.avatar_url} color={m.color} size={34} />)}</span></div>}
       <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>{PS.map(([s, l]) =>
         <button key={s} className="stat" onClick={() => setLst(s)}><b>{mine(s).length}</b><span style={{ fontSize: 11 }}>{l}</span></button>)}</div>
       <div style={{ fontSize: 12, opacity: .8, marginTop: 6 }}>My titles in this group. Tap a number to see the list.</div></div>
@@ -138,6 +140,6 @@ function Group({ user }) {
         style={{ background: c, width: 34, height: 34, borderRadius: '50%', border: 0, cursor: 'pointer', outline: me?.color === c ? '3px solid var(--fg)' : 'none', outlineOffset: 2 }} />)}</div>
       <div style={{ marginTop: 18 }}>{owner ? <button className="btn bad" onClick={delGroup}>Delete group</button> : <button className="btn bad" onClick={leave}>Leave group</button>}</div>
     </Sheet>}
-    <Chat groupId={id} user={user} members={mem} />
+    {!g.is_personal && <Chat groupId={id} user={user} members={mem} />}
   </>);
 }

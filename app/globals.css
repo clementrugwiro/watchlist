@@ -93,4 +93,4 @@ button.stat{border:0;color:#fff;font:inherit;cursor:pointer}
 .crep span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gifgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
 .gifgrid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer}
- 
+.gcard.me{background:linear-gradient(135deg,color-mix(in srgb,var(--c) 20%,var(--card)),color-mix(in srgb,#ec4899 12%,var(--card)))}
